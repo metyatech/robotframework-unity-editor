@@ -249,6 +249,7 @@ class UnityEditorLibrary:
         last_error: Exception | None = None
         while time.time() < deadline:
             try:
+                self._refresh_window()
                 window = self._require_window()
                 rect = window.rectangle()
                 width = int(rect.right - rect.left)
@@ -288,12 +289,19 @@ class UnityEditorLibrary:
 
     @keyword("Maximize Unity Window")
     def maximize_unity_window(self) -> None:
-        window = self._require_window()
-        try:
-            window.maximize()
-            time.sleep(0.3)
-        except Exception as error:  # pragma: no cover - integration path
-            raise RuntimeError(f"Failed to maximize Unity window: {error}") from error
+        last_error: Exception | None = None
+        for _ in range(3):
+            try:
+                self._refresh_window()
+                window = self._require_window()
+                window.maximize()
+                time.sleep(0.3)
+                return
+            except Exception as error:  # pragma: no cover - integration path
+                last_error = error
+                time.sleep(0.2)
+
+        raise RuntimeError(f"Failed to maximize Unity window: {last_error}") from last_error
 
     @keyword("Get Unity Window Rect")
     def get_unity_window_rect(self) -> dict[str, int]:
