@@ -265,12 +265,26 @@ class UnityEditorLibrary:
 
     @keyword("Focus Unity Window")
     def focus_unity_window(self) -> None:
-        window = self._require_window()
-        try:
-            window.set_focus()
-        except Exception:  # pragma: no cover - integration path
-            rect = window.rectangle()
-            mouse.click(coords=(int(rect.left + 32), int(rect.top + 16)))
+        last_error: Exception | None = None
+        for _ in range(3):
+            try:
+                self._refresh_window()
+                window = self._require_window()
+                window.set_focus()
+                return
+            except Exception as error:  # pragma: no cover - integration path
+                last_error = error
+                try:
+                    self._refresh_window()
+                    window = self._require_window()
+                    rect = window.rectangle()
+                    mouse.click(coords=(int(rect.left + 32), int(rect.top + 16)))
+                    return
+                except Exception as retry_error:
+                    last_error = retry_error
+                    time.sleep(0.2)
+
+        raise RuntimeError(f"Failed to focus Unity window: {last_error}") from last_error
 
     @keyword("Maximize Unity Window")
     def maximize_unity_window(self) -> None:
@@ -580,6 +594,11 @@ class UnityEditorLibrary:
         if self._window is None:
             raise RuntimeError("Unity window is not connected. Start or connect Unity first.")
         return self._window
+
+    def _refresh_window(self) -> None:
+        if self._unity_pid is None:
+            return
+        self.connect_unity_editor(process_id=self._unity_pid, timeout_seconds=5)
 
     def _relative_point(self, x_ratio: float, y_ratio: float) -> tuple[int, int, dict[str, int]]:
         rect = self.get_unity_window_rect()
