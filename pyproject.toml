@@ -1,0 +1,50 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "robotframework-unity-editor"
+version = "0.1.0"
+description = "Robot Framework library for Unity Editor automation on Windows."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "metyatech" }]
+keywords = ["robotframework", "unity", "automation", "windows"]
+dependencies = [
+  "robotframework>=7.0.0,<8.0.0",
+  "pywinauto>=0.6.8,<1.0.0",
+  "Pillow>=10.0.0,<12.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.0,<9.0.0",
+  "ruff>=0.13.0,<1.0.0",
+  "pyright>=1.1.403,<2.0.0",
+  "pip-audit>=2.9.0,<3.0.0",
+  "types-Pillow>=10.2.0.20240822",
+]
+
+[project.urls]
+Repository = "https://github.com/metyatech/robotframework-unity-editor"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/robotframework_unity_editor"]
+
+[tool.pyright]
+pythonVersion = "3.11"
+typeCheckingMode = "standard"
+reportMissingTypeStubs = "none"
+include = ["src", "tests"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
