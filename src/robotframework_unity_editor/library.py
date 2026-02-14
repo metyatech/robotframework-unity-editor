@@ -11,6 +11,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+import win32con
+import win32gui
 from PIL import ImageGrab
 from pywinauto import Application, keyboard, mouse
 from robot.api import logger
@@ -290,15 +292,28 @@ class UnityEditorLibrary:
     @keyword("Maximize Unity Window")
     def maximize_unity_window(self) -> None:
         last_error: Exception | None = None
+        window: Any | None = None
         for _ in range(3):
             try:
                 self._refresh_window()
                 window = self._require_window()
+                if window is None:
+                    raise RuntimeError("Unity window is unavailable.")
                 window.maximize()
                 time.sleep(0.3)
                 return
             except Exception as error:  # pragma: no cover - integration path
                 last_error = error
+                try:
+                    if window is None:
+                        raise RuntimeError("Unity window handle is unavailable.")
+                    handle = int(window.handle)
+                    win32gui.ShowWindow(handle, win32con.SW_MAXIMIZE)
+                    win32gui.SetForegroundWindow(handle)
+                    time.sleep(0.3)
+                    return
+                except Exception as fallback_error:
+                    last_error = fallback_error
                 time.sleep(0.2)
 
         raise RuntimeError(f"Failed to maximize Unity window: {last_error}") from last_error
