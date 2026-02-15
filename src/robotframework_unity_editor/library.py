@@ -13,6 +13,7 @@ from typing import Any
 
 import win32con
 import win32gui
+import win32process
 from PIL import ImageGrab
 from pywinauto import Application, keyboard, mouse
 from robot.api import logger
@@ -147,6 +148,37 @@ def find_unity_executable(
     raise FileNotFoundError("Could not locate Unity.exe. Set UNITY_EDITOR_EXE or pass unity_exe.")
 
 
+def _normalize_window_hint(window_hint: str | None) -> str:
+    hint = (window_hint or "Unity").strip()
+    return hint if hint else "Unity"
+
+
+def title_matches_window_hint(title: str, window_hint: str | None) -> bool:
+    normalized_hint = _normalize_window_hint(window_hint).lower()
+    normalized_title = title.strip().lower()
+    if not normalized_title:
+        return False
+    return normalized_hint in normalized_title
+
+
+def pick_unity_window_handle(
+    candidates: Sequence[tuple[int, str]],
+    window_hint: str | None,
+    foreground_handle: int | None = None,
+) -> int | None:
+    title_by_handle = {
+        handle: title
+        for handle, title in candidates
+        if title_matches_window_hint(title, window_hint)
+    }
+    if foreground_handle is not None and foreground_handle in title_by_handle:
+        return foreground_handle
+    for handle, _ in candidates:
+        if handle in title_by_handle:
+            return handle
+    return None
+
+
 @library(scope="GLOBAL", auto_keywords=False)
 class UnityEditorLibrary:
     """Robot Framework keywords for Unity Editor GUI automation on Windows."""
@@ -239,6 +271,46 @@ class UnityEditorLibrary:
         if last_error is not None:
             raise RuntimeError(f"Failed to connect Unity window: {last_error}") from last_error
         raise RuntimeError("Failed to connect Unity window before timeout.")
+
+    @keyword("Attach To Running Unity Editor")
+    def attach_to_running_unity_editor(
+        self,
+        window_hint: str = "Unity",
+        timeout_seconds: int = DEFAULT_STABILITY_TIMEOUT_SECONDS,
+    ) -> int:
+        deadline = time.time() + timeout_seconds
+        last_error: Exception | None = None
+        while time.time() < deadline:
+            try:
+                matched_handle = pick_unity_window_handle(
+                    candidates=self._enumerate_visible_windows(),
+                    window_hint=window_hint,
+                    foreground_handle=win32gui.GetForegroundWindow(),
+                )
+                if matched_handle is None:
+                    time.sleep(0.5)
+                    continue
+
+                _, unity_pid = win32process.GetWindowThreadProcessId(matched_handle)
+                app = Application(backend=self._backend).connect(handle=matched_handle)
+                window = app.window(handle=matched_handle)
+                if not window.exists() or not window.is_visible():
+                    raise RuntimeError("Matched Unity window is not visible.")
+
+                self._app = app
+                self._window = window
+                self._unity_pid = unity_pid
+                self._unity_process = None
+                return unity_pid
+            except Exception as error:  # pragma: no cover - integration path
+                last_error = error
+            time.sleep(0.5)
+
+        if last_error is not None:
+            raise RuntimeError(
+                f"Failed to attach running Unity window: {last_error}"
+            ) from last_error
+        raise RuntimeError("Failed to attach running Unity window before timeout.")
 
     @keyword("Ensure Unity Window Stable")
     def ensure_unity_window_stable(
@@ -622,6 +694,21 @@ class UnityEditorLibrary:
         if self._unity_pid is None:
             return
         self.connect_unity_editor(process_id=self._unity_pid, timeout_seconds=5)
+
+    def _enumerate_visible_windows(self) -> list[tuple[int, str]]:
+        windows: list[tuple[int, str]] = []
+
+        def _callback(handle: int, _lparam: int) -> bool:
+            if not win32gui.IsWindowVisible(handle):
+                return True
+            title = win32gui.GetWindowText(handle)
+            if not title:
+                return True
+            windows.append((handle, title))
+            return True
+
+        win32gui.EnumWindows(_callback, 0)
+        return windows
 
     def _relative_point(self, x_ratio: float, y_ratio: float) -> tuple[int, int, dict[str, int]]:
         rect = self.get_unity_window_rect()

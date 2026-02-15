@@ -43,8 +43,7 @@ Library    robotframework_unity_editor.UnityEditorLibrary
 *** Test Cases ***
 Unity Basic Scenario
     Set Unity Output Directory    artifacts/unity
-    Start Unity Editor
-    Maximize Unity Window
+    Attach To Running Unity Editor    window_hint=Unity
     Focus Unity Window
     ${annotation}=    Click Unity Relative    0.07    0.05
     Emit DOCMETA    {"annotation": ${annotation}}
@@ -57,6 +56,7 @@ Unity Basic Scenario
 
 - `Set Unity Output Directory`
 - `Start Unity Editor`
+- `Attach To Running Unity Editor`
 - `Connect Unity Editor`
 - `Ensure Unity Window Stable`
 - `Get Unity Window Rect`

@@ -7,7 +7,9 @@ from robotframework_unity_editor.library import (
     build_drag_annotation,
     clamp_ratio,
     find_unity_executable,
+    pick_unity_window_handle,
     shortcut_to_send_keys,
+    title_matches_window_hint,
 )
 
 
@@ -77,3 +79,36 @@ def test_find_unity_executable_uses_candidates(tmp_path: Path) -> None:
 def test_find_unity_executable_raises_when_missing(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
         find_unity_executable(candidate_paths=[tmp_path / "missing.exe"])
+
+
+def test_title_matches_window_hint() -> None:
+    assert title_matches_window_hint("MyProject - Unity 2022.3", "Unity")
+    assert title_matches_window_hint("Avatar Tooling - Unity", "avatar")
+    assert not title_matches_window_hint("Visual Studio Code", "Unity")
+
+
+def test_pick_unity_window_handle_prefers_foreground() -> None:
+    candidates = [
+        (10, "Project A - Unity"),
+        (20, "Project B - Unity"),
+    ]
+    selected = pick_unity_window_handle(candidates, "Unity", foreground_handle=20)
+    assert selected == 20
+
+
+def test_pick_unity_window_handle_uses_first_match() -> None:
+    candidates = [
+        (10, "Project A - Unity"),
+        (20, "Project B - Unity"),
+    ]
+    selected = pick_unity_window_handle(candidates, "Project A")
+    assert selected == 10
+
+
+def test_pick_unity_window_handle_returns_none_when_not_found() -> None:
+    candidates = [
+        (10, "Visual Studio Code"),
+        (20, "Notepad"),
+    ]
+    selected = pick_unity_window_handle(candidates, "Unity")
+    assert selected is None
