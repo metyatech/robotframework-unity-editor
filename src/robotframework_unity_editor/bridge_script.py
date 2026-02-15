@@ -4,6 +4,7 @@ from __future__ import annotations
 
 UNITY_EDITOR_BRIDGE_SCRIPT = r"""#if UNITY_EDITOR
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Text;
@@ -16,8 +17,11 @@ using UnityEngine.SceneManagement;
 public static class RobotFrameworkUnityBridge
 {
     private const int Port = 39067;
+    private const int RequestDispatchTimeoutMs = 5000;
     private static HttpListener _listener;
-    private static Thread _thread;
+    private static Thread _listenerThread;
+    private static readonly object MainThreadQueueLock = new object();
+    private static readonly Queue<Action> MainThreadQueue = new Queue<Action>();
 
     [Serializable]
     private class SelectionPayload
@@ -36,6 +40,7 @@ public static class RobotFrameworkUnityBridge
     static RobotFrameworkUnityBridge()
     {
         EditorApplication.delayCall += StartBridge;
+        EditorApplication.update += PumpMainThreadQueue;
         AssemblyReloadEvents.beforeAssemblyReload += StopBridge;
         EditorApplication.quitting += StopBridge;
     }
@@ -52,8 +57,8 @@ public static class RobotFrameworkUnityBridge
             _listener = new HttpListener();
             _listener.Prefixes.Add($"http://127.0.0.1:{Port}/");
             _listener.Start();
-            _thread = new Thread(ListenLoop) { IsBackground = true };
-            _thread.Start();
+            _listenerThread = new Thread(ListenLoop) { IsBackground = true };
+            _listenerThread.Start();
             Debug.Log($"[RobotFrameworkUnityBridge] Listening on 127.0.0.1:{Port}");
         }
         catch (Exception ex)
@@ -77,6 +82,19 @@ public static class RobotFrameworkUnityBridge
         {
             _listener = null;
         }
+        var listenerThread = _listenerThread;
+        _listenerThread = null;
+        if (listenerThread != null && listenerThread.IsAlive)
+        {
+            try
+            {
+                listenerThread.Join(500);
+            }
+            catch
+            {
+                // ignore join errors
+            }
+        }
     }
 
     private static void ListenLoop()
@@ -97,9 +115,98 @@ public static class RobotFrameworkUnityBridge
                 continue;
             }
 
-            var capturedContext = context;
-            EditorApplication.delayCall += () => HandleRequest(capturedContext);
+            HandleRequest(context);
         }
+    }
+
+    private static void PumpMainThreadQueue()
+    {
+        while (true)
+        {
+            Action action = null;
+            lock (MainThreadQueueLock)
+            {
+                if (MainThreadQueue.Count == 0)
+                {
+                    break;
+                }
+                action = MainThreadQueue.Dequeue();
+            }
+
+            try
+            {
+                action?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning(
+                    $"[RobotFrameworkUnityBridge] Main-thread action failed: {ex.Message}"
+                );
+            }
+        }
+    }
+
+    private static bool ExecuteOnMainThread<T>(
+        Func<T> function,
+        int timeoutMs,
+        out T result,
+        out string error
+    )
+    {
+        var done = new ManualResetEventSlim(false);
+        Exception captured = null;
+        T local = default;
+
+        lock (MainThreadQueueLock)
+        {
+            MainThreadQueue.Enqueue(() =>
+            {
+                try
+                {
+                    local = function();
+                }
+                catch (Exception ex)
+                {
+                    captured = ex;
+                }
+                finally
+                {
+                    done.Set();
+                }
+            });
+        }
+
+        if (!done.Wait(Math.Max(1, timeoutMs)))
+        {
+            result = default;
+            error = $"Main-thread dispatch timed out after {timeoutMs} ms.";
+            return false;
+        }
+
+        if (captured != null)
+        {
+            result = default;
+            error = captured.Message;
+            return false;
+        }
+
+        result = local;
+        error = "";
+        return true;
+    }
+
+    private static bool ExecuteOnMainThread(Action action, int timeoutMs, out string error)
+    {
+        return ExecuteOnMainThread(
+            () =>
+            {
+                action();
+                return true;
+            },
+            timeoutMs,
+            out _,
+            out error
+        );
     }
 
     private static void HandleRequest(HttpListenerContext context)
@@ -107,11 +214,32 @@ public static class RobotFrameworkUnityBridge
         try
         {
             var method = context.Request.HttpMethod.ToUpperInvariant();
-            var path = context.Request.Url.AbsolutePath ?? "/";
+            var path = context.Request.Url?.AbsolutePath ?? "/";
 
             if (method == "GET" && path == "/v1/selection")
             {
-                var hierarchyPath = GetSelectedHierarchyPath();
+                if (
+                    !ExecuteOnMainThread(
+                        GetSelectedHierarchyPath,
+                        RequestDispatchTimeoutMs,
+                        out string hierarchyPath,
+                        out string dispatchError
+                    )
+                )
+                {
+                    WriteJson(
+                        context.Response,
+                        503,
+                        new SelectionPayload
+                        {
+                            ok = false,
+                            hierarchy_path = "",
+                            error = dispatchError
+                        }
+                    );
+                    return;
+                }
+
                 WriteJson(
                     context.Response,
                     200,
@@ -143,8 +271,40 @@ public static class RobotFrameworkUnityBridge
                     return;
                 }
 
-                var target = FindByHierarchyPath(normalized);
-                if (target == null)
+                var selected = false;
+                if (
+                    !ExecuteOnMainThread(
+                        () =>
+                        {
+                            var target = FindByHierarchyPath(normalized);
+                            if (target == null)
+                            {
+                                selected = false;
+                                return;
+                            }
+                            Selection.activeGameObject = target;
+                            EditorGUIUtility.PingObject(target);
+                            selected = true;
+                        },
+                        RequestDispatchTimeoutMs,
+                        out string dispatchError
+                    )
+                )
+                {
+                    WriteJson(
+                        context.Response,
+                        503,
+                        new SelectionPayload
+                        {
+                            ok = false,
+                            hierarchy_path = normalized,
+                            error = dispatchError
+                        }
+                    );
+                    return;
+                }
+
+                if (!selected)
                 {
                     WriteJson(
                         context.Response,
@@ -159,8 +319,6 @@ public static class RobotFrameworkUnityBridge
                     return;
                 }
 
-                Selection.activeGameObject = target;
-                EditorGUIUtility.PingObject(target);
                 WriteJson(
                     context.Response,
                     200,
@@ -281,13 +439,20 @@ public static class RobotFrameworkUnityBridge
         SelectionPayload payload
     )
     {
-        response.StatusCode = statusCode;
-        response.ContentType = "application/json; charset=utf-8";
-        var json = JsonUtility.ToJson(payload);
-        var bytes = Encoding.UTF8.GetBytes(json);
-        response.ContentLength64 = bytes.Length;
-        response.OutputStream.Write(bytes, 0, bytes.Length);
-        response.OutputStream.Close();
+        try
+        {
+            response.StatusCode = statusCode;
+            response.ContentType = "application/json; charset=utf-8";
+            var json = JsonUtility.ToJson(payload);
+            var bytes = Encoding.UTF8.GetBytes(json);
+            response.ContentLength64 = bytes.Length;
+            using var output = response.OutputStream;
+            output.Write(bytes, 0, bytes.Length);
+        }
+        catch
+        {
+            // client may disconnect before response flush
+        }
     }
 }
 #endif

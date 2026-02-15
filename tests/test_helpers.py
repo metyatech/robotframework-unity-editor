@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from robotframework_unity_editor.bridge_script import UNITY_EDITOR_BRIDGE_SCRIPT
 from robotframework_unity_editor.library import (
     DEFAULT_UNITY_BRIDGE_PACKAGE_NAME,
     DEFAULT_UNITY_BRIDGE_PACKAGE_URL,
@@ -13,11 +14,24 @@ from robotframework_unity_editor.library import (
     clamp_ratio,
     ensure_upm_dependency_in_manifest,
     find_unity_executable,
+    has_unity_bridge_package_script_meta,
     normalize_hierarchy_path,
     pick_unity_window_handle,
     shortcut_to_send_keys,
     title_matches_window_hint,
 )
+
+
+def test_bridge_script_uses_main_thread_queue_dispatch() -> None:
+    assert "EditorApplication.update += PumpMainThreadQueue;" in UNITY_EDITOR_BRIDGE_SCRIPT
+    assert "ExecuteOnMainThread(" in UNITY_EDITOR_BRIDGE_SCRIPT
+
+
+def test_bridge_script_does_not_dispatch_requests_via_delay_call_from_listener_thread() -> None:
+    assert (
+        "EditorApplication.delayCall += () => HandleRequest(capturedContext);"
+        not in UNITY_EDITOR_BRIDGE_SCRIPT
+    )
 
 
 def test_clamp_ratio_limits_values() -> None:
@@ -125,7 +139,63 @@ def test_ensure_unity_bridge_upm_package_keyword_updates_manifest(tmp_path: Path
     )
 
 
-def test_ensure_unity_bridge_upm_package_keyword_removes_legacy_script(tmp_path: Path) -> None:
+def test_has_unity_bridge_package_script_meta_detects_cache_meta(tmp_path: Path) -> None:
+    project_path = tmp_path / "sample-project"
+    meta_path = (
+        project_path
+        / "Library"
+        / "PackageCache"
+        / "com.metyatech.unity-automation-bridge@abc123"
+        / "Editor"
+        / "RobotFrameworkUnityBridge.cs.meta"
+    )
+    meta_path.parent.mkdir(parents=True)
+    meta_path.write_text("fileFormatVersion: 2", encoding="utf-8")
+
+    assert has_unity_bridge_package_script_meta(project_path) is True
+
+
+def test_ensure_unity_bridge_upm_package_keyword_removes_legacy_script_with_package_meta(
+    tmp_path: Path,
+) -> None:
+    project_path = tmp_path / "sample-project"
+    packages_dir = project_path / "Packages"
+    packages_dir.mkdir(parents=True)
+    manifest_path = packages_dir / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {"dependencies": {DEFAULT_UNITY_BRIDGE_PACKAGE_NAME: DEFAULT_UNITY_BRIDGE_PACKAGE_URL}},
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    legacy_script = project_path / "Assets" / "Editor" / "RobotFrameworkUnityBridge.cs"
+    legacy_meta = project_path / "Assets" / "Editor" / "RobotFrameworkUnityBridge.cs.meta"
+    legacy_script.parent.mkdir(parents=True)
+    legacy_script.write_text("// legacy", encoding="utf-8")
+    legacy_meta.write_text("fileFormatVersion: 2", encoding="utf-8")
+    package_meta_path = (
+        project_path
+        / "Library"
+        / "PackageCache"
+        / "com.metyatech.unity-automation-bridge@abc123"
+        / "Editor"
+        / "RobotFrameworkUnityBridge.cs.meta"
+    )
+    package_meta_path.parent.mkdir(parents=True)
+    package_meta_path.write_text("fileFormatVersion: 2", encoding="utf-8")
+
+    library = UnityEditorLibrary(output_dir=str(tmp_path))
+    changed = library.ensure_unity_bridge_upm_package(str(project_path))
+
+    assert changed is True
+    assert not legacy_script.exists()
+    assert not legacy_meta.exists()
+
+
+def test_ensure_unity_bridge_upm_package_keyword_keeps_legacy_script_without_package_meta(
+    tmp_path: Path,
+) -> None:
     project_path = tmp_path / "sample-project"
     packages_dir = project_path / "Packages"
     packages_dir.mkdir(parents=True)
@@ -146,9 +216,9 @@ def test_ensure_unity_bridge_upm_package_keyword_removes_legacy_script(tmp_path:
     library = UnityEditorLibrary(output_dir=str(tmp_path))
     changed = library.ensure_unity_bridge_upm_package(str(project_path))
 
-    assert changed is True
-    assert not legacy_script.exists()
-    assert not legacy_meta.exists()
+    assert changed is False
+    assert legacy_script.exists()
+    assert legacy_meta.exists()
 
 
 @pytest.mark.parametrize(

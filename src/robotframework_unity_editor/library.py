@@ -36,6 +36,13 @@ DEFAULT_UNITY_BRIDGE_PACKAGE_URL = (
 )
 UNITY_BRIDGE_SCRIPT_RELATIVE_PATH = Path("Assets/Editor/RobotFrameworkUnityBridge.cs")
 UNITY_MANIFEST_RELATIVE_PATH = Path("Packages/manifest.json")
+UNITY_BRIDGE_PACKAGE_META_GLOB = (
+    "Library/PackageCache/com.metyatech.unity-automation-bridge@*/Editor/"
+    "RobotFrameworkUnityBridge.cs.meta"
+)
+UNITY_BRIDGE_EMBEDDED_META_PATH = Path(
+    "Packages/com.metyatech.unity-automation-bridge/Editor/RobotFrameworkUnityBridge.cs.meta"
+)
 
 KEY_ALIASES = {
     "ENTER": "{ENTER}",
@@ -140,6 +147,13 @@ def remove_legacy_bridge_script(project_root: Path) -> bool:
         path.unlink()
         changed = True
     return changed
+
+
+def has_unity_bridge_package_script_meta(project_root: Path) -> bool:
+    normalized_root = Path(project_root).resolve()
+    if (normalized_root / UNITY_BRIDGE_EMBEDDED_META_PATH).exists():
+        return True
+    return any(normalized_root.glob(UNITY_BRIDGE_PACKAGE_META_GLOB))
 
 
 def shortcut_to_send_keys(shortcut: str) -> str:
@@ -315,7 +329,10 @@ class UnityEditorLibrary:
             package_name=package_name,
             package_url=package_url,
         )
-        legacy_changed = remove_legacy_bridge_script(project_root)
+        package_meta_exists = has_unity_bridge_package_script_meta(project_root)
+        legacy_changed = False
+        if package_meta_exists:
+            legacy_changed = remove_legacy_bridge_script(project_root)
         if changed:
             manifest_path.write_text(
                 json.dumps(manifest_data, ensure_ascii=False, indent=2) + "\n",
@@ -325,6 +342,10 @@ class UnityEditorLibrary:
         if legacy_changed:
             legacy_script_path = project_root / UNITY_BRIDGE_SCRIPT_RELATIVE_PATH
             logger.info(f"Removed legacy bridge script at {legacy_script_path}")
+        if not package_meta_exists:
+            logger.info(
+                "Unity bridge package script metadata is missing; keeping legacy bridge script."
+            )
         return changed or legacy_changed
 
     @keyword("Start Unity Editor")
