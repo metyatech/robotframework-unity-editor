@@ -87,6 +87,22 @@ def test_ensure_upm_dependency_in_manifest_is_idempotent() -> None:
     assert changed is False
 
 
+def test_ensure_upm_dependency_in_manifest_keeps_existing_source() -> None:
+    existing_url = "file:../local-packages/unity-automation-bridge"
+    manifest = {
+        "dependencies": {
+            DEFAULT_UNITY_BRIDGE_PACKAGE_NAME: existing_url,
+        }
+    }
+    changed = ensure_upm_dependency_in_manifest(
+        manifest,
+        package_name=DEFAULT_UNITY_BRIDGE_PACKAGE_NAME,
+        package_url=DEFAULT_UNITY_BRIDGE_PACKAGE_URL,
+    )
+    assert changed is False
+    assert manifest["dependencies"][DEFAULT_UNITY_BRIDGE_PACKAGE_NAME] == existing_url
+
+
 def test_ensure_unity_bridge_upm_package_keyword_updates_manifest(tmp_path: Path) -> None:
     project_path = tmp_path / "sample-project"
     packages_dir = project_path / "Packages"

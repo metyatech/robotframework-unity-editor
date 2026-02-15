@@ -125,7 +125,7 @@ def ensure_upm_dependency_in_manifest(
     if not isinstance(dependencies, dict):
         raise ValueError("manifest.json dependencies must be a JSON object.")
     current = dependencies.get(package_name)
-    if str(current or "").strip() == package_url:
+    if str(current or "").strip() != "":
         return False
     dependencies[package_name] = package_url
     return True
