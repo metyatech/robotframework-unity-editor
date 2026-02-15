@@ -10,6 +10,7 @@ This package provides reusable Robot keywords for Unity Editor GUI automation:
 - Relative click/drag operations for stable scenario definitions
 - Keyboard input and shortcut execution
 - Top menu access and UI element lookup (title/automation id/class/control type)
+- Unity hierarchy selection bridge (`hierarchy_path`) for custom-drawn panes
 - Unity window screenshots
 - `DOCMETA` emission for downstream annotation pipelines (click/drag)
 
@@ -52,6 +53,24 @@ Unity Basic Scenario
     Stop Unity Editor
 ```
 
+Hierarchy path example (requires bridge script installed in Unity project):
+
+```robot
+*** Test Cases ***
+Select Tail From Hierarchy
+    Attach To Running Unity Editor    window_hint=Unity
+    ${annotation}=    Select Unity Hierarchy Object    hierarchy_path=AvatarRoot/Hair/Tail
+    Emit DOCMETA    {"annotation": ${annotation}}
+```
+
+Install bridge script to a Unity project:
+
+```robot
+*** Test Cases ***
+Install Bridge
+    Install Unity Editor Bridge Script    D:/projects/my-unity-project
+```
+
 ## Key Keywords
 
 - `Set Unity Output Directory`
@@ -71,6 +90,9 @@ Unity Basic Scenario
 - `Get Unity Element Rect`
 - `Click Unity Element`
 - `Drag Unity Element To Element`
+- `Get Unity Selected Hierarchy Path`
+- `Select Unity Hierarchy Object`
+- `Install Unity Editor Bridge Script`
 - `Capture Unity Screenshot`
 - `Emit DOCMETA`
 - `Emit Click DOCMETA`

@@ -5,8 +5,10 @@ import pytest
 from robotframework_unity_editor.library import (
     build_click_annotation,
     build_drag_annotation,
+    build_hierarchy_select_annotation,
     clamp_ratio,
     find_unity_executable,
+    normalize_hierarchy_path,
     pick_unity_window_handle,
     shortcut_to_send_keys,
     title_matches_window_hint,
@@ -38,6 +40,18 @@ def test_build_drag_annotation() -> None:
         "type": "dragDrop",
         "from": {"x": 10, "y": 20},
         "to": {"x": 80, "y": 100},
+    }
+
+
+def test_normalize_hierarchy_path() -> None:
+    assert normalize_hierarchy_path("Root/Child") == "Root/Child"
+    assert normalize_hierarchy_path(" /Root//Child/ ") == "Root/Child"
+
+
+def test_build_hierarchy_select_annotation() -> None:
+    assert build_hierarchy_select_annotation("Root/Child") == {
+        "type": "hierarchySelect",
+        "hierarchyPath": "Root/Child",
     }
 
 

@@ -7,6 +7,8 @@ import os
 import platform
 import subprocess
 import time
+import urllib.error
+import urllib.request
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -19,11 +21,16 @@ from pywinauto import Application, keyboard, mouse
 from robot.api import logger
 from robot.api.deco import keyword, library
 
+from .bridge_script import UNITY_EDITOR_BRIDGE_SCRIPT
+
 DEFAULT_WINDOW_BACKEND = "uia"
 DEFAULT_STARTUP_TIMEOUT_SECONDS = 420
 DEFAULT_STABILITY_TIMEOUT_SECONDS = 60
 DEFAULT_BOX_WIDTH = 180
 DEFAULT_BOX_HEIGHT = 48
+DEFAULT_UNITY_BRIDGE_HOST = "127.0.0.1"
+DEFAULT_UNITY_BRIDGE_PORT = 39067
+UNITY_BRIDGE_SCRIPT_RELATIVE_PATH = Path("Assets/Editor/RobotFrameworkUnityBridge.cs")
 
 KEY_ALIASES = {
     "ENTER": "{ENTER}",
@@ -87,6 +94,20 @@ def build_drag_annotation(from_x: int, from_y: int, to_x: int, to_y: int) -> dic
         "type": "dragDrop",
         "from": {"x": from_x, "y": from_y},
         "to": {"x": to_x, "y": to_y},
+    }
+
+
+def normalize_hierarchy_path(value: str) -> str:
+    normalized = str(value or "").replace("\\", "/").strip()
+    while "//" in normalized:
+        normalized = normalized.replace("//", "/")
+    return normalized.strip("/")
+
+
+def build_hierarchy_select_annotation(hierarchy_path: str) -> dict[str, Any]:
+    return {
+        "type": "hierarchySelect",
+        "hierarchyPath": normalize_hierarchy_path(hierarchy_path),
     }
 
 
@@ -188,11 +209,15 @@ class UnityEditorLibrary:
         output_dir: str | None = None,
         backend: str = DEFAULT_WINDOW_BACKEND,
         default_startup_timeout_seconds: int = DEFAULT_STARTUP_TIMEOUT_SECONDS,
+        unity_bridge_host: str = DEFAULT_UNITY_BRIDGE_HOST,
+        unity_bridge_port: int = DEFAULT_UNITY_BRIDGE_PORT,
     ) -> None:
         self._require_windows()
         self._output_dir = Path(output_dir).resolve() if output_dir else Path.cwd()
         self._backend = backend
         self._default_startup_timeout_seconds = default_startup_timeout_seconds
+        self._unity_bridge_host = str(unity_bridge_host).strip() or DEFAULT_UNITY_BRIDGE_HOST
+        self._unity_bridge_port = int(unity_bridge_port)
         self._unity_process: subprocess.Popen[bytes] | None = None
         self._unity_pid: int | None = None
         self._app: Any = None
@@ -211,6 +236,29 @@ class UnityEditorLibrary:
     @keyword("Resolve Unity Executable")
     def resolve_unity_executable(self, unity_exe: str | None = None) -> str:
         return str(find_unity_executable(unity_exe))
+
+    @keyword("Set Unity Bridge Endpoint")
+    def set_unity_bridge_endpoint(
+        self,
+        host: str = DEFAULT_UNITY_BRIDGE_HOST,
+        port: int = DEFAULT_UNITY_BRIDGE_PORT,
+    ) -> str:
+        self._unity_bridge_host = str(host).strip() or DEFAULT_UNITY_BRIDGE_HOST
+        self._unity_bridge_port = int(port)
+        return self.get_unity_bridge_endpoint()
+
+    @keyword("Get Unity Bridge Endpoint")
+    def get_unity_bridge_endpoint(self) -> str:
+        return f"http://{self._unity_bridge_host}:{self._unity_bridge_port}"
+
+    @keyword("Install Unity Editor Bridge Script")
+    def install_unity_editor_bridge_script(self, project_path: str) -> str:
+        project_root = Path(project_path).resolve()
+        bridge_path = project_root / UNITY_BRIDGE_SCRIPT_RELATIVE_PATH
+        bridge_path.parent.mkdir(parents=True, exist_ok=True)
+        bridge_path.write_text(UNITY_EDITOR_BRIDGE_SCRIPT, encoding="utf-8")
+        logger.info(f"Installed Unity bridge script: {bridge_path}")
+        return str(bridge_path)
 
     @keyword("Start Unity Editor")
     def start_unity_editor(
@@ -614,6 +662,36 @@ class UnityEditorLibrary:
         mouse.release(coords=(to_x, to_y))
         return build_drag_annotation(from_x, from_y, to_x, to_y)
 
+    @keyword("Get Unity Selected Hierarchy Path")
+    def get_unity_selected_hierarchy_path(self, timeout_seconds: float = 2.0) -> str:
+        payload = self._request_unity_bridge(
+            "GET", "/v1/selection", timeout_seconds=timeout_seconds
+        )
+        if not bool(payload.get("ok", False)):
+            raise RuntimeError(f"Unity bridge selection request failed: {payload}")
+        hierarchy_path = normalize_hierarchy_path(str(payload.get("hierarchy_path") or ""))
+        return hierarchy_path
+
+    @keyword("Select Unity Hierarchy Object")
+    def select_unity_hierarchy_object(
+        self,
+        hierarchy_path: str,
+        timeout_seconds: float = 4.0,
+    ) -> dict[str, Any]:
+        normalized = normalize_hierarchy_path(hierarchy_path)
+        if normalized == "":
+            raise ValueError("hierarchy_path cannot be empty.")
+        payload = self._request_unity_bridge(
+            "POST",
+            "/v1/select",
+            payload={"hierarchy_path": normalized},
+            timeout_seconds=timeout_seconds,
+        )
+        if not bool(payload.get("ok", False)):
+            raise RuntimeError(f"Unity bridge selection failed: {payload}")
+        selected = normalize_hierarchy_path(str(payload.get("hierarchy_path") or normalized))
+        return build_hierarchy_select_annotation(selected or normalized)
+
     @keyword("Capture Unity Screenshot")
     def capture_unity_screenshot(self, image_path: str | None = None) -> str:
         rect = self.get_unity_window_rect()
@@ -715,6 +793,55 @@ class UnityEditorLibrary:
         x = rect["left"] + round(rect["width"] * clamp_ratio(float(x_ratio)))
         y = rect["top"] + round(rect["height"] * clamp_ratio(float(y_ratio)))
         return x, y, rect
+
+    def _request_unity_bridge(
+        self,
+        method: str,
+        path: str,
+        payload: Mapping[str, Any] | None = None,
+        timeout_seconds: float = 2.0,
+    ) -> dict[str, Any]:
+        endpoint = f"{self.get_unity_bridge_endpoint()}{path}"
+        data: bytes | None = None
+        headers = {"Accept": "application/json"}
+        if payload is not None:
+            data = json.dumps(dict(payload), ensure_ascii=False).encode("utf-8")
+            headers["Content-Type"] = "application/json; charset=utf-8"
+        request = urllib.request.Request(
+            endpoint,
+            data=data,
+            headers=headers,
+            method=method.upper(),
+        )
+        try:
+            with urllib.request.urlopen(
+                request, timeout=max(0.1, float(timeout_seconds))
+            ) as response:
+                body = response.read().decode("utf-8")
+        except urllib.error.HTTPError as error:
+            raw = error.read().decode("utf-8")
+            if raw.strip():
+                try:
+                    payload_json = json.loads(raw)
+                    if isinstance(payload_json, dict):
+                        return payload_json
+                except json.JSONDecodeError:
+                    pass
+            raise RuntimeError(
+                f"Unity bridge HTTP error: status={error.code} path={path}"
+            ) from error
+        except urllib.error.URLError as error:
+            raise RuntimeError(
+                f"Unity bridge is not reachable at {self.get_unity_bridge_endpoint()}."
+            ) from error
+
+        try:
+            payload_json = json.loads(body or "{}")
+        except json.JSONDecodeError as error:
+            raise RuntimeError("Unity bridge returned invalid JSON response.") from error
+        if not isinstance(payload_json, dict):
+            raise RuntimeError("Unity bridge returned unexpected response payload.")
+        return payload_json
 
     def _find_element(
         self,
