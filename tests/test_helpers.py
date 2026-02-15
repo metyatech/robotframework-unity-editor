@@ -125,6 +125,32 @@ def test_ensure_unity_bridge_upm_package_keyword_updates_manifest(tmp_path: Path
     )
 
 
+def test_ensure_unity_bridge_upm_package_keyword_removes_legacy_script(tmp_path: Path) -> None:
+    project_path = tmp_path / "sample-project"
+    packages_dir = project_path / "Packages"
+    packages_dir.mkdir(parents=True)
+    manifest_path = packages_dir / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {"dependencies": {DEFAULT_UNITY_BRIDGE_PACKAGE_NAME: DEFAULT_UNITY_BRIDGE_PACKAGE_URL}},
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    legacy_script = project_path / "Assets" / "Editor" / "RobotFrameworkUnityBridge.cs"
+    legacy_meta = project_path / "Assets" / "Editor" / "RobotFrameworkUnityBridge.cs.meta"
+    legacy_script.parent.mkdir(parents=True)
+    legacy_script.write_text("// legacy", encoding="utf-8")
+    legacy_meta.write_text("fileFormatVersion: 2", encoding="utf-8")
+
+    library = UnityEditorLibrary(output_dir=str(tmp_path))
+    changed = library.ensure_unity_bridge_upm_package(str(project_path))
+
+    assert changed is True
+    assert not legacy_script.exists()
+    assert not legacy_meta.exists()
+
+
 @pytest.mark.parametrize(
     ("shortcut", "expected"),
     [

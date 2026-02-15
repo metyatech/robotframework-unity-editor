@@ -79,6 +79,9 @@ com.metyatech.unity-automation-bridge
   -> https://github.com/metyatech/robotframework-unity-editor.git?path=/unity-package#main
 ```
 
+`Ensure Unity Bridge UPM Package` also removes legacy bridge script
+`Assets/Editor/RobotFrameworkUnityBridge.cs` (and `.meta`) when present.
+
 ## Key Keywords
 
 - `Set Unity Output Directory`

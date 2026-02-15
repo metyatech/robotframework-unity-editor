@@ -131,6 +131,17 @@ def ensure_upm_dependency_in_manifest(
     return True
 
 
+def remove_legacy_bridge_script(project_root: Path) -> bool:
+    changed = False
+    script_path = project_root / UNITY_BRIDGE_SCRIPT_RELATIVE_PATH
+    for path in (script_path, Path(f"{script_path}.meta")):
+        if not path.exists():
+            continue
+        path.unlink()
+        changed = True
+    return changed
+
+
 def shortcut_to_send_keys(shortcut: str) -> str:
     tokens = [token.strip().upper() for token in shortcut.split("+") if token.strip()]
     if not tokens:
@@ -304,13 +315,17 @@ class UnityEditorLibrary:
             package_name=package_name,
             package_url=package_url,
         )
+        legacy_changed = remove_legacy_bridge_script(project_root)
         if changed:
             manifest_path.write_text(
                 json.dumps(manifest_data, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
             )
             logger.info(f"Added UPM dependency '{package_name}' to {manifest_path}")
-        return changed
+        if legacy_changed:
+            legacy_script_path = project_root / UNITY_BRIDGE_SCRIPT_RELATIVE_PATH
+            logger.info(f"Removed legacy bridge script at {legacy_script_path}")
+        return changed or legacy_changed
 
     @keyword("Start Unity Editor")
     def start_unity_editor(
