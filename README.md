@@ -11,6 +11,7 @@ This package provides reusable Robot keywords for Unity Editor GUI automation:
 - Keyboard input and shortcut execution
 - Top menu access and UI element lookup (title/automation id/class/control type)
 - Unity hierarchy selection bridge (`hierarchy_path`) for custom-drawn panes
+- Unity bridge UPM dependency management (`Packages/manifest.json`)
 - Unity window screenshots
 - `DOCMETA` emission for downstream annotation pipelines (click/drag)
 
@@ -53,7 +54,7 @@ Unity Basic Scenario
     Stop Unity Editor
 ```
 
-Hierarchy path example (requires bridge script installed in Unity project):
+Hierarchy path example (requires Unity bridge package in the target project):
 
 ```robot
 *** Test Cases ***
@@ -63,12 +64,19 @@ Select Tail From Hierarchy
     Emit DOCMETA    {"annotation": ${annotation}}
 ```
 
-Install bridge script to a Unity project:
+Ensure Unity bridge UPM package in a Unity project:
 
 ```robot
 *** Test Cases ***
-Install Bridge
-    Install Unity Editor Bridge Script    D:/projects/my-unity-project
+Ensure Bridge
+    Ensure Unity Bridge UPM Package    D:/projects/my-unity-project
+```
+
+UPM dependency used by default:
+
+```text
+com.metyatech.unity-automation-bridge
+  -> https://github.com/metyatech/robotframework-unity-editor.git?path=/unity-package#main
 ```
 
 ## Key Keywords
@@ -92,6 +100,7 @@ Install Bridge
 - `Drag Unity Element To Element`
 - `Get Unity Selected Hierarchy Path`
 - `Select Unity Hierarchy Object`
+- `Ensure Unity Bridge UPM Package`
 - `Install Unity Editor Bridge Script`
 - `Capture Unity Screenshot`
 - `Emit DOCMETA`

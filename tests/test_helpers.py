@@ -1,12 +1,17 @@
+import json
 from pathlib import Path
 
 import pytest
 
 from robotframework_unity_editor.library import (
+    DEFAULT_UNITY_BRIDGE_PACKAGE_NAME,
+    DEFAULT_UNITY_BRIDGE_PACKAGE_URL,
+    UnityEditorLibrary,
     build_click_annotation,
     build_drag_annotation,
     build_hierarchy_select_annotation,
     clamp_ratio,
+    ensure_upm_dependency_in_manifest,
     find_unity_executable,
     normalize_hierarchy_path,
     pick_unity_window_handle,
@@ -53,6 +58,55 @@ def test_build_hierarchy_select_annotation() -> None:
         "type": "hierarchySelect",
         "hierarchyPath": "Root/Child",
     }
+
+
+def test_ensure_upm_dependency_in_manifest_adds_dependency() -> None:
+    manifest = {"dependencies": {"com.unity.textmeshpro": "3.0.6"}}
+    changed = ensure_upm_dependency_in_manifest(
+        manifest,
+        package_name=DEFAULT_UNITY_BRIDGE_PACKAGE_NAME,
+        package_url=DEFAULT_UNITY_BRIDGE_PACKAGE_URL,
+    )
+    assert changed is True
+    assert manifest["dependencies"][DEFAULT_UNITY_BRIDGE_PACKAGE_NAME] == (
+        DEFAULT_UNITY_BRIDGE_PACKAGE_URL
+    )
+
+
+def test_ensure_upm_dependency_in_manifest_is_idempotent() -> None:
+    manifest = {
+        "dependencies": {
+            DEFAULT_UNITY_BRIDGE_PACKAGE_NAME: DEFAULT_UNITY_BRIDGE_PACKAGE_URL,
+        }
+    }
+    changed = ensure_upm_dependency_in_manifest(
+        manifest,
+        package_name=DEFAULT_UNITY_BRIDGE_PACKAGE_NAME,
+        package_url=DEFAULT_UNITY_BRIDGE_PACKAGE_URL,
+    )
+    assert changed is False
+
+
+def test_ensure_unity_bridge_upm_package_keyword_updates_manifest(tmp_path: Path) -> None:
+    project_path = tmp_path / "sample-project"
+    packages_dir = project_path / "Packages"
+    packages_dir.mkdir(parents=True)
+    manifest_path = packages_dir / "manifest.json"
+    manifest_path.write_text(
+        json.dumps({"dependencies": {"com.unity.textmeshpro": "3.0.6"}}, indent=2),
+        encoding="utf-8",
+    )
+
+    library = UnityEditorLibrary(output_dir=str(tmp_path))
+    changed = library.ensure_unity_bridge_upm_package(str(project_path))
+    unchanged = library.ensure_unity_bridge_upm_package(str(project_path))
+
+    assert changed is True
+    assert unchanged is False
+    parsed = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert parsed["dependencies"][DEFAULT_UNITY_BRIDGE_PACKAGE_NAME] == (
+        DEFAULT_UNITY_BRIDGE_PACKAGE_URL
+    )
 
 
 @pytest.mark.parametrize(

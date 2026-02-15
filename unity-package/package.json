@@ -1,0 +1,10 @@
+{
+  "name": "com.metyatech.unity-automation-bridge",
+  "version": "0.1.0",
+  "displayName": "Metyatech Unity Automation Bridge",
+  "description": "Unity Editor bridge for external automation tools (Robot Framework / Studio).",
+  "unity": "2021.3",
+  "author": {
+    "name": "metyatech"
+  }
+}

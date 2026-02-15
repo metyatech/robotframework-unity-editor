@@ -30,7 +30,12 @@ DEFAULT_BOX_WIDTH = 180
 DEFAULT_BOX_HEIGHT = 48
 DEFAULT_UNITY_BRIDGE_HOST = "127.0.0.1"
 DEFAULT_UNITY_BRIDGE_PORT = 39067
+DEFAULT_UNITY_BRIDGE_PACKAGE_NAME = "com.metyatech.unity-automation-bridge"
+DEFAULT_UNITY_BRIDGE_PACKAGE_URL = (
+    "https://github.com/metyatech/robotframework-unity-editor.git?path=/unity-package#main"
+)
 UNITY_BRIDGE_SCRIPT_RELATIVE_PATH = Path("Assets/Editor/RobotFrameworkUnityBridge.cs")
+UNITY_MANIFEST_RELATIVE_PATH = Path("Packages/manifest.json")
 
 KEY_ALIASES = {
     "ENTER": "{ENTER}",
@@ -109,6 +114,21 @@ def build_hierarchy_select_annotation(hierarchy_path: str) -> dict[str, Any]:
         "type": "hierarchySelect",
         "hierarchyPath": normalize_hierarchy_path(hierarchy_path),
     }
+
+
+def ensure_upm_dependency_in_manifest(
+    manifest: dict[str, Any],
+    package_name: str,
+    package_url: str,
+) -> bool:
+    dependencies = manifest.setdefault("dependencies", {})
+    if not isinstance(dependencies, dict):
+        raise ValueError("manifest.json dependencies must be a JSON object.")
+    current = dependencies.get(package_name)
+    if str(current or "").strip() == package_url:
+        return False
+    dependencies[package_name] = package_url
+    return True
 
 
 def shortcut_to_send_keys(shortcut: str) -> str:
@@ -259,6 +279,38 @@ class UnityEditorLibrary:
         bridge_path.write_text(UNITY_EDITOR_BRIDGE_SCRIPT, encoding="utf-8")
         logger.info(f"Installed Unity bridge script: {bridge_path}")
         return str(bridge_path)
+
+    @keyword("Ensure Unity Bridge UPM Package")
+    def ensure_unity_bridge_upm_package(
+        self,
+        project_path: str,
+        package_name: str = DEFAULT_UNITY_BRIDGE_PACKAGE_NAME,
+        package_url: str = DEFAULT_UNITY_BRIDGE_PACKAGE_URL,
+    ) -> bool:
+        project_root = Path(project_path).resolve()
+        manifest_path = project_root / UNITY_MANIFEST_RELATIVE_PATH
+        if not manifest_path.exists():
+            raise FileNotFoundError(
+                f"Unity manifest.json not found: {manifest_path}. "
+                "Expected a valid Unity project path."
+            )
+        raw = manifest_path.read_text(encoding="utf-8")
+        manifest_data = json.loads(raw or "{}")
+        if not isinstance(manifest_data, dict):
+            raise ValueError("manifest.json root must be a JSON object.")
+
+        changed = ensure_upm_dependency_in_manifest(
+            manifest_data,
+            package_name=package_name,
+            package_url=package_url,
+        )
+        if changed:
+            manifest_path.write_text(
+                json.dumps(manifest_data, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            logger.info(f"Added UPM dependency '{package_name}' to {manifest_path}")
+        return changed
 
     @keyword("Start Unity Editor")
     def start_unity_editor(
