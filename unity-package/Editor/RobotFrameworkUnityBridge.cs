@@ -18,12 +18,18 @@ public static class RobotFrameworkUnityBridge
     private static Thread _listenerThread;
     private static readonly object MainThreadQueueLock = new object();
     private static readonly Queue<Action> MainThreadQueue = new Queue<Action>();
+    private static readonly object SelectionStateLock = new object();
+    private static long _selectionVersion = 0;
+    private static string _selectionHierarchyPath = "";
+    private static long _selectionChangedUnixMs = 0;
 
     [Serializable]
     private class SelectionPayload
     {
         public bool ok;
         public string hierarchy_path;
+        public long selection_version;
+        public long selection_changed_unix_ms;
         public string error;
     }
 
@@ -39,6 +45,7 @@ public static class RobotFrameworkUnityBridge
         EditorApplication.update += PumpMainThreadQueue;
         AssemblyReloadEvents.beforeAssemblyReload += StopBridge;
         EditorApplication.quitting += StopBridge;
+        Selection.selectionChanged += OnSelectionChanged;
     }
 
     private static void StartBridge()
@@ -47,6 +54,8 @@ public static class RobotFrameworkUnityBridge
         {
             return;
         }
+
+        UpdateSelectionState();
 
         try
         {
@@ -72,6 +81,7 @@ public static class RobotFrameworkUnityBridge
         }
         catch
         {
+            // ignore shutdown errors
         }
         finally
         {
@@ -138,6 +148,23 @@ public static class RobotFrameworkUnityBridge
                     $"[RobotFrameworkUnityBridge] Main-thread action failed: {ex.Message}"
                 );
             }
+        }
+    }
+
+    private static void OnSelectionChanged()
+    {
+        UpdateSelectionState();
+    }
+
+    private static void UpdateSelectionState()
+    {
+        var hierarchyPath = GetSelectedHierarchyPath();
+        lock (SelectionStateLock)
+        {
+            _selectionVersion += 1;
+            _selectionHierarchyPath = hierarchyPath ?? "";
+            _selectionChangedUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            Monitor.PulseAll(SelectionStateLock);
         }
     }
 
@@ -211,35 +238,64 @@ public static class RobotFrameworkUnityBridge
             var method = context.Request.HttpMethod.ToUpperInvariant();
             var path = context.Request.Url?.AbsolutePath ?? "/";
 
-            if (method == "GET" && path == "/v1/selection")
+            if (method == "GET" && path == "/v1/selection/wait")
             {
-                if (
-                    !ExecuteOnMainThread(
-                        GetSelectedHierarchyPath,
-                        RequestDispatchTimeoutMs,
-                        out string hierarchyPath,
-                        out string dispatchError
-                    )
-                )
+                long afterVersion = 0;
+                var afterRaw = context.Request.QueryString["after_version"] ?? "";
+                long.TryParse(afterRaw, out afterVersion);
+
+                var timeoutMs = 350;
+                var timeoutRaw = context.Request.QueryString["timeout_ms"] ?? "";
+                if (int.TryParse(timeoutRaw, out int parsedTimeoutMs))
                 {
-                    WriteJson(
-                        context.Response,
-                        503,
-                        new SelectionPayload
+                    timeoutMs = parsedTimeoutMs;
+                }
+                timeoutMs = Math.Max(0, Math.Min(15000, timeoutMs));
+
+                var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+                SelectionPayload payload;
+                lock (SelectionStateLock)
+                {
+                    while (_selectionVersion <= afterVersion)
+                    {
+                        var remainingMs = (int)Math.Ceiling(
+                            (deadline - DateTime.UtcNow).TotalMilliseconds
+                        );
+                        if (remainingMs <= 0)
                         {
-                            ok = false,
-                            hierarchy_path = "",
-                            error = dispatchError
+                            break;
                         }
-                    );
-                    return;
+                        Monitor.Wait(SelectionStateLock, remainingMs);
+                    }
+                    payload = new SelectionPayload
+                    {
+                        ok = true,
+                        hierarchy_path = _selectionHierarchyPath ?? "",
+                        selection_version = _selectionVersion,
+                        selection_changed_unix_ms = _selectionChangedUnixMs,
+                        error = ""
+                    };
                 }
 
-                WriteJson(
-                    context.Response,
-                    200,
-                    new SelectionPayload { ok = true, hierarchy_path = hierarchyPath, error = "" }
-                );
+                WriteJson(context.Response, 200, payload);
+                return;
+            }
+
+            if (method == "GET" && path == "/v1/selection")
+            {
+                SelectionPayload payload;
+                lock (SelectionStateLock)
+                {
+                    payload = new SelectionPayload
+                    {
+                        ok = true,
+                        hierarchy_path = _selectionHierarchyPath ?? "",
+                        selection_version = _selectionVersion,
+                        selection_changed_unix_ms = _selectionChangedUnixMs,
+                        error = ""
+                    };
+                }
+                WriteJson(context.Response, 200, payload);
                 return;
             }
 
@@ -317,7 +373,14 @@ public static class RobotFrameworkUnityBridge
                 WriteJson(
                     context.Response,
                     200,
-                    new SelectionPayload { ok = true, hierarchy_path = normalized, error = "" }
+                    new SelectionPayload
+                    {
+                        ok = true,
+                        hierarchy_path = normalized,
+                        selection_version = _selectionVersion,
+                        selection_changed_unix_ms = _selectionChangedUnixMs,
+                        error = ""
+                    }
                 );
                 return;
             }
@@ -329,6 +392,8 @@ public static class RobotFrameworkUnityBridge
                 {
                     ok = false,
                     hierarchy_path = "",
+                    selection_version = _selectionVersion,
+                    selection_changed_unix_ms = _selectionChangedUnixMs,
                     error = "Endpoint not found."
                 }
             );
@@ -338,7 +403,14 @@ public static class RobotFrameworkUnityBridge
             WriteJson(
                 context.Response,
                 500,
-                new SelectionPayload { ok = false, hierarchy_path = "", error = ex.Message }
+                new SelectionPayload
+                {
+                    ok = false,
+                    hierarchy_path = "",
+                    selection_version = _selectionVersion,
+                    selection_changed_unix_ms = _selectionChangedUnixMs,
+                    error = ex.Message
+                }
             );
         }
     }
@@ -376,6 +448,11 @@ public static class RobotFrameworkUnityBridge
         {
             return null;
         }
+        var allowAnyRoot = string.Equals(segments[0], "*", StringComparison.Ordinal);
+        if (allowAnyRoot && segments.Length < 2)
+        {
+            return null;
+        }
 
         for (var sceneIndex = 0; sceneIndex < SceneManager.sceneCount; sceneIndex++)
         {
@@ -387,7 +464,10 @@ public static class RobotFrameworkUnityBridge
 
             foreach (var root in scene.GetRootGameObjects())
             {
-                if (!string.Equals(root.name, segments[0], StringComparison.Ordinal))
+                if (
+                    !allowAnyRoot
+                    && !string.Equals(root.name, segments[0], StringComparison.Ordinal)
+                )
                 {
                     continue;
                 }
