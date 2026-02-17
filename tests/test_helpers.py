@@ -35,6 +35,18 @@ def test_bridge_script_does_not_dispatch_requests_via_delay_call_from_listener_t
     )
 
 
+def test_bridge_script_supports_wildcard_root_hierarchy_paths() -> None:
+    assert (
+        'var allowAnyRoot = string.Equals(segments[0], "*", StringComparison.Ordinal);'
+        in UNITY_EDITOR_BRIDGE_SCRIPT
+    )
+    assert "if (allowAnyRoot && segments.Length < 2)" in UNITY_EDITOR_BRIDGE_SCRIPT
+    assert "!allowAnyRoot" in UNITY_EDITOR_BRIDGE_SCRIPT
+    assert "string.Equals(root.name, segments[0], StringComparison.Ordinal)" in (
+        UNITY_EDITOR_BRIDGE_SCRIPT
+    )
+
+
 def test_clamp_ratio_limits_values() -> None:
     assert clamp_ratio(-0.5) == 0.0
     assert clamp_ratio(0.4) == 0.4

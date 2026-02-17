@@ -381,6 +381,11 @@ public static class RobotFrameworkUnityBridge
         {
             return null;
         }
+        var allowAnyRoot = string.Equals(segments[0], "*", StringComparison.Ordinal);
+        if (allowAnyRoot && segments.Length < 2)
+        {
+            return null;
+        }
 
         for (var sceneIndex = 0; sceneIndex < SceneManager.sceneCount; sceneIndex++)
         {
@@ -392,7 +397,10 @@ public static class RobotFrameworkUnityBridge
 
             foreach (var root in scene.GetRootGameObjects())
             {
-                if (!string.Equals(root.name, segments[0], StringComparison.Ordinal))
+                if (
+                    !allowAnyRoot
+                    && !string.Equals(root.name, segments[0], StringComparison.Ordinal)
+                )
                 {
                     continue;
                 }
