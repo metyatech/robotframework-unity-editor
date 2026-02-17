@@ -90,8 +90,27 @@ def clamp_ratio(value: float) -> float:
 
 
 def build_click_annotation(x: int, y: int, width: int, height: int) -> dict[str, Any]:
+    return build_click_annotation_with_type(
+        x=x,
+        y=y,
+        width=width,
+        height=height,
+        annotation_type="click",
+    )
+
+
+def build_click_annotation_with_type(
+    x: int,
+    y: int,
+    width: int,
+    height: int,
+    annotation_type: str = "click",
+) -> dict[str, Any]:
+    normalized_type = str(annotation_type or "click").strip().lower()
+    if normalized_type not in {"click", "click_pulse", "highlight_box"}:
+        raise ValueError("annotation_type must be one of: click, click_pulse, highlight_box.")
     return {
-        "type": "click",
+        "type": normalized_type,
         "box": {
             "x": x - round(width / 2),
             "y": y - round(height / 2),
@@ -101,9 +120,18 @@ def build_click_annotation(x: int, y: int, width: int, height: int) -> dict[str,
     }
 
 
-def build_drag_annotation(from_x: int, from_y: int, to_x: int, to_y: int) -> dict[str, Any]:
+def build_drag_annotation(
+    from_x: int,
+    from_y: int,
+    to_x: int,
+    to_y: int,
+    annotation_type: str = "drag_arrow",
+) -> dict[str, Any]:
+    normalized_type = str(annotation_type or "drag_arrow").strip()
+    if normalized_type not in {"drag_arrow", "dragDrop"}:
+        raise ValueError("annotation_type must be one of: drag_arrow, dragDrop.")
     return {
-        "type": "dragDrop",
+        "type": normalized_type,
         "from": {"x": from_x, "y": from_y},
         "to": {"x": to_x, "y": to_y},
     }
@@ -117,9 +145,10 @@ def normalize_hierarchy_path(value: str) -> str:
 
 
 def build_hierarchy_select_annotation(hierarchy_path: str) -> dict[str, Any]:
+    normalized = normalize_hierarchy_path(hierarchy_path)
     return {
-        "type": "hierarchySelect",
-        "hierarchyPath": normalize_hierarchy_path(hierarchy_path),
+        "type": "label",
+        "text": normalized,
     }
 
 
@@ -560,7 +589,14 @@ class UnityEditorLibrary:
     ) -> dict[str, Any]:
         x, y, _ = self._relative_point(x_ratio, y_ratio)
         mouse.click(button=button, coords=(x, y))
-        return build_click_annotation(x, y, box_width, box_height)
+        annotation_type = "click" if str(button).lower() == "left" else "click_pulse"
+        return build_click_annotation_with_type(
+            x,
+            y,
+            box_width,
+            box_height,
+            annotation_type=annotation_type,
+        )
 
     @keyword("Double Click Unity Relative")
     def double_click_unity_relative(
@@ -572,7 +608,13 @@ class UnityEditorLibrary:
     ) -> dict[str, Any]:
         x, y, _ = self._relative_point(x_ratio, y_ratio)
         mouse.double_click(coords=(x, y))
-        return build_click_annotation(x, y, box_width, box_height)
+        return build_click_annotation_with_type(
+            x,
+            y,
+            box_width,
+            box_height,
+            annotation_type="click_pulse",
+        )
 
     @keyword("Right Click Unity Relative")
     def right_click_unity_relative(
@@ -606,7 +648,13 @@ class UnityEditorLibrary:
         mouse.move(coords=(to_x, to_y))
         time.sleep(0.1)
         mouse.release(coords=(to_x, to_y))
-        return build_drag_annotation(from_x, from_y, to_x, to_y)
+        return build_drag_annotation(
+            from_x,
+            from_y,
+            to_x,
+            to_y,
+            annotation_type="drag_arrow",
+        )
 
     @keyword("Press Unity Keys")
     def press_unity_keys(self, keys: str, pause_seconds: float = 0.03) -> None:
@@ -713,11 +761,13 @@ class UnityEditorLibrary:
         x = rect["left"] + round(rect["width"] / 2)
         y = rect["top"] + round(rect["height"] / 2)
         mouse.click(button=button, coords=(x, y))
-        return build_click_annotation(
+        annotation_type = "click" if str(button).lower() == "left" else "click_pulse"
+        return build_click_annotation_with_type(
             x=x,
             y=y,
             width=rect["width"],
             height=rect["height"],
+            annotation_type=annotation_type,
         )
 
     @keyword("Drag Unity Element To Element")
@@ -748,7 +798,13 @@ class UnityEditorLibrary:
         mouse.move(coords=(to_x, to_y))
         time.sleep(0.1)
         mouse.release(coords=(to_x, to_y))
-        return build_drag_annotation(from_x, from_y, to_x, to_y)
+        return build_drag_annotation(
+            from_x,
+            from_y,
+            to_x,
+            to_y,
+            annotation_type="drag_arrow",
+        )
 
     @keyword("Get Unity Selected Hierarchy Path")
     def get_unity_selected_hierarchy_path(self, timeout_seconds: float = 2.0) -> str:

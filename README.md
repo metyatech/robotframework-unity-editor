@@ -13,7 +13,7 @@ This package provides reusable Robot keywords for Unity Editor GUI automation:
 - Unity hierarchy selection bridge (`hierarchy_path`) for custom-drawn panes
 - Unity bridge UPM dependency management (`Packages/manifest.json`)
 - Unity window screenshots
-- `DOCMETA` emission for downstream annotation pipelines (click/drag)
+- `DOCMETA` emission for downstream annotation pipelines (`click`, `click_pulse`, `drag_arrow`, `label`)
 
 ## Supported Environment
 
@@ -63,6 +63,17 @@ Select Tail From Hierarchy
     ${annotation}=    Select Unity Hierarchy Object    hierarchy_path=AvatarRoot/Hair/Tail
     Emit DOCMETA    {"annotation": ${annotation}}
 ```
+
+Annotation payloads returned by common action keywords:
+
+- `Click Unity Relative` / `Click Unity Element(button=left)`:
+  `{"type":"click","box":{...}}`
+- `Double Click Unity Relative` / `Right Click Unity Relative` / `Click Unity Element(button=right)`:
+  `{"type":"click_pulse","box":{...}}`
+- `Drag Unity Relative` / `Drag Unity Element To Element`:
+  `{"type":"drag_arrow","from":{...},"to":{...}}`
+- `Select Unity Hierarchy Object`:
+  `{"type":"label","text":"AvatarRoot/Hair/Tail"}`
 
 Ensure Unity bridge UPM package in a Unity project:
 

@@ -9,6 +9,7 @@ from robotframework_unity_editor.library import (
     DEFAULT_UNITY_BRIDGE_PACKAGE_URL,
     UnityEditorLibrary,
     build_click_annotation,
+    build_click_annotation_with_type,
     build_drag_annotation,
     build_hierarchy_select_annotation,
     clamp_ratio,
@@ -53,10 +54,29 @@ def test_build_click_annotation() -> None:
     }
 
 
+def test_build_click_pulse_annotation() -> None:
+    annotation = build_click_annotation_with_type(
+        x=100,
+        y=70,
+        width=40,
+        height=20,
+        annotation_type="click_pulse",
+    )
+    assert annotation == {
+        "type": "click_pulse",
+        "box": {
+            "x": 80,
+            "y": 60,
+            "width": 40,
+            "height": 20,
+        },
+    }
+
+
 def test_build_drag_annotation() -> None:
     annotation = build_drag_annotation(from_x=10, from_y=20, to_x=80, to_y=100)
     assert annotation == {
-        "type": "dragDrop",
+        "type": "drag_arrow",
         "from": {"x": 10, "y": 20},
         "to": {"x": 80, "y": 100},
     }
@@ -69,8 +89,8 @@ def test_normalize_hierarchy_path() -> None:
 
 def test_build_hierarchy_select_annotation() -> None:
     assert build_hierarchy_select_annotation("Root/Child") == {
-        "type": "hierarchySelect",
-        "hierarchyPath": "Root/Child",
+        "type": "label",
+        "text": "Root/Child",
     }
 
 
