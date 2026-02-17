@@ -360,6 +360,8 @@ Source: github:metyatech/agent-rules@HEAD/rules/global/quality-testing-and-error
 - Keep tests deterministic; minimize time/random/external I/O; inject when needed.
 - For deterministic output files, use full-content snapshot/golden tests.
 - Prefer making nondeterministic failures reproducible over adding sleeps/retries; do not mask flakiness.
+- For timing/order/race issues, prefer deterministic synchronization (events, versioned state, acks/handshakes) over fixed sleeps.
+- If a heuristic wait is unavoidable, it MUST be condition-based with a hard deadline and diagnostics, and requires explicit requester approval.
 - For integration boundaries (network/DB/external services/UI flows), add an integration/E2E/contract test that exercises the boundary; avoid unit-only coverage for integration bugs.
 - For non-trivial changes, create a small test matrix (scenarios × inputs × states) and cover the highest-risk combinations; document intentional gaps.
 
