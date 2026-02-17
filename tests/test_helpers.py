@@ -35,6 +35,19 @@ def test_bridge_script_does_not_dispatch_requests_via_delay_call_from_listener_t
     )
 
 
+def test_bridge_script_includes_selection_version_in_payload() -> None:
+    assert "public long selection_version;" in UNITY_EDITOR_BRIDGE_SCRIPT
+
+
+def test_bridge_script_tracks_selection_changes_with_versioning() -> None:
+    assert "Selection.selectionChanged +=" in UNITY_EDITOR_BRIDGE_SCRIPT
+
+
+def test_bridge_script_supports_selection_wait_endpoint() -> None:
+    assert 'path == "/v1/selection/wait"' in UNITY_EDITOR_BRIDGE_SCRIPT
+    assert "Monitor.Wait" in UNITY_EDITOR_BRIDGE_SCRIPT
+
+
 def test_bridge_script_supports_wildcard_root_hierarchy_paths() -> None:
     assert (
         'var allowAnyRoot = string.Equals(segments[0], "*", StringComparison.Ordinal);'

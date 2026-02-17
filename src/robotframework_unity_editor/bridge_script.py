@@ -22,12 +22,16 @@ public static class RobotFrameworkUnityBridge
     private static Thread _listenerThread;
     private static readonly object MainThreadQueueLock = new object();
     private static readonly Queue<Action> MainThreadQueue = new Queue<Action>();
+    private static readonly object SelectionStateLock = new object();
+    private static long _selectionVersion = 0;
+    private static string _selectionHierarchyPath = "";
 
     [Serializable]
     private class SelectionPayload
     {
         public bool ok;
         public string hierarchy_path;
+        public long selection_version;
         public string error;
     }
 
@@ -43,6 +47,7 @@ public static class RobotFrameworkUnityBridge
         EditorApplication.update += PumpMainThreadQueue;
         AssemblyReloadEvents.beforeAssemblyReload += StopBridge;
         EditorApplication.quitting += StopBridge;
+        Selection.selectionChanged += OnSelectionChanged;
     }
 
     private static void StartBridge()
@@ -51,6 +56,8 @@ public static class RobotFrameworkUnityBridge
         {
             return;
         }
+
+        UpdateSelectionState();
 
         try
         {
@@ -146,6 +153,22 @@ public static class RobotFrameworkUnityBridge
         }
     }
 
+    private static void OnSelectionChanged()
+    {
+        UpdateSelectionState();
+    }
+
+    private static void UpdateSelectionState()
+    {
+        var hierarchyPath = GetSelectedHierarchyPath();
+        lock (SelectionStateLock)
+        {
+            _selectionVersion += 1;
+            _selectionHierarchyPath = hierarchyPath ?? "";
+            Monitor.PulseAll(SelectionStateLock);
+        }
+    }
+
     private static bool ExecuteOnMainThread<T>(
         Func<T> function,
         int timeoutMs,
@@ -216,35 +239,62 @@ public static class RobotFrameworkUnityBridge
             var method = context.Request.HttpMethod.ToUpperInvariant();
             var path = context.Request.Url?.AbsolutePath ?? "/";
 
-            if (method == "GET" && path == "/v1/selection")
+            if (method == "GET" && path == "/v1/selection/wait")
             {
-                if (
-                    !ExecuteOnMainThread(
-                        GetSelectedHierarchyPath,
-                        RequestDispatchTimeoutMs,
-                        out string hierarchyPath,
-                        out string dispatchError
-                    )
-                )
+                long afterVersion = 0;
+                var afterRaw = context.Request.QueryString["after_version"] ?? "";
+                long.TryParse(afterRaw, out afterVersion);
+
+                var timeoutMs = 350;
+                var timeoutRaw = context.Request.QueryString["timeout_ms"] ?? "";
+                if (int.TryParse(timeoutRaw, out int parsedTimeoutMs))
                 {
-                    WriteJson(
-                        context.Response,
-                        503,
-                        new SelectionPayload
+                    timeoutMs = parsedTimeoutMs;
+                }
+                timeoutMs = Math.Max(0, Math.Min(15000, timeoutMs));
+
+                var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+                SelectionPayload payload;
+                lock (SelectionStateLock)
+                {
+                    while (_selectionVersion <= afterVersion)
+                    {
+                        var remainingMs = (int)Math.Ceiling(
+                            (deadline - DateTime.UtcNow).TotalMilliseconds
+                        );
+                        if (remainingMs <= 0)
                         {
-                            ok = false,
-                            hierarchy_path = "",
-                            error = dispatchError
+                            break;
                         }
-                    );
-                    return;
+                        Monitor.Wait(SelectionStateLock, remainingMs);
+                    }
+                    payload = new SelectionPayload
+                    {
+                        ok = true,
+                        hierarchy_path = _selectionHierarchyPath ?? "",
+                        selection_version = _selectionVersion,
+                        error = ""
+                    };
                 }
 
-                WriteJson(
-                    context.Response,
-                    200,
-                    new SelectionPayload { ok = true, hierarchy_path = hierarchyPath, error = "" }
-                );
+                WriteJson(context.Response, 200, payload);
+                return;
+            }
+
+            if (method == "GET" && path == "/v1/selection")
+            {
+                SelectionPayload payload;
+                lock (SelectionStateLock)
+                {
+                    payload = new SelectionPayload
+                    {
+                        ok = true,
+                        hierarchy_path = _selectionHierarchyPath ?? "",
+                        selection_version = _selectionVersion,
+                        error = ""
+                    };
+                }
+                WriteJson(context.Response, 200, payload);
                 return;
             }
 
@@ -322,7 +372,13 @@ public static class RobotFrameworkUnityBridge
                 WriteJson(
                     context.Response,
                     200,
-                    new SelectionPayload { ok = true, hierarchy_path = normalized, error = "" }
+                    new SelectionPayload
+                    {
+                        ok = true,
+                        hierarchy_path = normalized,
+                        selection_version = _selectionVersion,
+                        error = ""
+                    }
                 );
                 return;
             }
@@ -334,6 +390,7 @@ public static class RobotFrameworkUnityBridge
                 {
                     ok = false,
                     hierarchy_path = "",
+                    selection_version = _selectionVersion,
                     error = "Endpoint not found."
                 }
             );
@@ -343,7 +400,13 @@ public static class RobotFrameworkUnityBridge
             WriteJson(
                 context.Response,
                 500,
-                new SelectionPayload { ok = false, hierarchy_path = "", error = ex.Message }
+                new SelectionPayload
+                {
+                    ok = false,
+                    hierarchy_path = "",
+                    selection_version = _selectionVersion,
+                    error = ex.Message
+                }
             );
         }
     }
