@@ -48,6 +48,11 @@ def test_bridge_script_supports_selection_wait_endpoint() -> None:
     assert "Monitor.Wait" in UNITY_EDITOR_BRIDGE_SCRIPT
 
 
+def test_bridge_script_includes_selection_changed_timestamp_in_payload() -> None:
+    assert "public long selection_changed_unix_ms;" in UNITY_EDITOR_BRIDGE_SCRIPT
+    assert "DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()" in UNITY_EDITOR_BRIDGE_SCRIPT
+
+
 def test_bridge_script_supports_wildcard_root_hierarchy_paths() -> None:
     assert (
         'var allowAnyRoot = string.Equals(segments[0], "*", StringComparison.Ordinal);'

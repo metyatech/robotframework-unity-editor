@@ -25,6 +25,7 @@ public static class RobotFrameworkUnityBridge
     private static readonly object SelectionStateLock = new object();
     private static long _selectionVersion = 0;
     private static string _selectionHierarchyPath = "";
+    private static long _selectionChangedUnixMs = 0;
 
     [Serializable]
     private class SelectionPayload
@@ -32,6 +33,7 @@ public static class RobotFrameworkUnityBridge
         public bool ok;
         public string hierarchy_path;
         public long selection_version;
+        public long selection_changed_unix_ms;
         public string error;
     }
 
@@ -165,6 +167,7 @@ public static class RobotFrameworkUnityBridge
         {
             _selectionVersion += 1;
             _selectionHierarchyPath = hierarchyPath ?? "";
+            _selectionChangedUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             Monitor.PulseAll(SelectionStateLock);
         }
     }
@@ -273,6 +276,7 @@ public static class RobotFrameworkUnityBridge
                         ok = true,
                         hierarchy_path = _selectionHierarchyPath ?? "",
                         selection_version = _selectionVersion,
+                        selection_changed_unix_ms = _selectionChangedUnixMs,
                         error = ""
                     };
                 }
@@ -291,6 +295,7 @@ public static class RobotFrameworkUnityBridge
                         ok = true,
                         hierarchy_path = _selectionHierarchyPath ?? "",
                         selection_version = _selectionVersion,
+                        selection_changed_unix_ms = _selectionChangedUnixMs,
                         error = ""
                     };
                 }
@@ -377,6 +382,7 @@ public static class RobotFrameworkUnityBridge
                         ok = true,
                         hierarchy_path = normalized,
                         selection_version = _selectionVersion,
+                        selection_changed_unix_ms = _selectionChangedUnixMs,
                         error = ""
                     }
                 );
@@ -391,6 +397,7 @@ public static class RobotFrameworkUnityBridge
                     ok = false,
                     hierarchy_path = "",
                     selection_version = _selectionVersion,
+                    selection_changed_unix_ms = _selectionChangedUnixMs,
                     error = "Endpoint not found."
                 }
             );
@@ -405,6 +412,7 @@ public static class RobotFrameworkUnityBridge
                     ok = false,
                     hierarchy_path = "",
                     selection_version = _selectionVersion,
+                    selection_changed_unix_ms = _selectionChangedUnixMs,
                     error = ex.Message
                 }
             );
