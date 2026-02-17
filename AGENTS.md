@@ -263,6 +263,12 @@ Source: github:metyatech/agent-rules@HEAD/rules/global/observability-and-diagnos
 - Design for debuggability: make failures diagnosable from logs/metrics/traces without reproducing locally.
 - Add observability in the same change set as behavior changes that affect runtime behavior, performance, or reliability.
 
+## Performance investigations
+
+- For performance/latency issues, measure first: establish a baseline, then use profiling/instrumentation to identify hotspots; do not implement "optimizations" based on guesswork.
+- Record before/after numbers and the measurement method in the change set (tests, benchmark output, logs, or deterministic manual steps).
+- Prefer automated performance regression tests/benchmarks when feasible; otherwise provide deterministic manual measurement steps.
+
 ## Logging
 
 - Prefer structured logs for services; keep field names stable (e.g., level, message, component, request_id/trace_id, version).
