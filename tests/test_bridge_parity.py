@@ -12,7 +12,8 @@ def test_upm_bridge_supports_any_root_hierarchy_paths() -> None:
     # The UPM bridge implementation must support resolving these paths.
     text = _read_upm_bridge_text()
     assert "allowAnyRoot" in text
-    assert "segments[0]" in text and '"*"' in text
+    assert "segments[0]" in text
+    assert '"*"' in text
 
 
 def test_upm_bridge_exposes_selection_version_state() -> None:

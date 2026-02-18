@@ -143,5 +143,6 @@ powershell -ExecutionPolicy Bypass -File scripts/verify.ps1
 
 - Security policy: `SECURITY.md`
 - Contributing guide: `CONTRIBUTING.md`
+- Code of Conduct: `CODE_OF_CONDUCT.md`
 - License: `LICENSE`
 - Changelog: `CHANGELOG.md`
