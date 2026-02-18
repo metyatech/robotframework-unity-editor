@@ -813,8 +813,7 @@ class UnityEditorLibrary:
         )
         if not bool(payload.get("ok", False)):
             raise RuntimeError(f"Unity bridge selection request failed: {payload}")
-        hierarchy_path = normalize_hierarchy_path(str(payload.get("hierarchy_path") or ""))
-        return hierarchy_path
+        return normalize_hierarchy_path(str(payload.get("hierarchy_path") or ""))
 
     @keyword("Select Unity Hierarchy Object")
     def select_unity_hierarchy_object(
@@ -1020,8 +1019,7 @@ class UnityEditorLibrary:
         while time.time() < deadline:
             try:
                 candidate = window.child_window(**criteria)
-                wrapper = candidate.wrapper_object()
-                return wrapper
+                return candidate.wrapper_object()
             except Exception as error:
                 last_error = error
             time.sleep(0.2)

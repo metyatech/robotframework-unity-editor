@@ -28,6 +28,8 @@ dev = [
 
 [project.urls]
 Repository = "https://github.com/metyatech/robotframework-unity-editor"
+Issues = "https://github.com/metyatech/robotframework-unity-editor/issues"
+Homepage = "https://github.com/metyatech/robotframework-unity-editor"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/robotframework_unity_editor"]
@@ -47,4 +49,4 @@ line-length = 100
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "A", "ARG", "C4", "PT", "RET", "T20"]
