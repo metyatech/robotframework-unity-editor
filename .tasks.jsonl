@@ -1,0 +1,3 @@
+{"id":"atyNml2D","description":"chore: update pre-commit hook to run full verification suite","stage":"done","createdAt":"2026-03-06T02:52:06.435Z","updatedAt":"2026-03-06T03:03:29.514Z"}
+{"id":"7SSvuCYY","description":"chore: fill in missing email in CODE_OF_CONDUCT.md","stage":"done","createdAt":"2026-03-06T02:52:06.537Z","updatedAt":"2026-03-06T03:03:29.617Z"}
+{"id":"zra1b1kZ","description":"test: add mocked unit tests for UnityEditorLibrary","stage":"done","createdAt":"2026-03-06T02:52:06.641Z","updatedAt":"2026-03-06T03:03:29.725Z"}
